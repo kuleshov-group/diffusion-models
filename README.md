@@ -10,12 +10,14 @@ This repo provides a clean implementation of various types of diffusion models. 
 └── diffusion             # Implements various types of diffusion processes
   ├── gaussian.py         # Classical Gaussian diffusion
   ├── infomax.py          # Auxiliary-variable and information maximizing models (controllable diffusion models with small disentangled latents; experimental & in progress)
-  └── learned.py        # Diffusion models where the noising process is learned (experimental & in progress)
+  └── learned.py          # Diffusion models where the noising process is learned (experimental & in progress)
 ├── misc                  # Miscellaneous utilities, like evaluation
 └── models                # Implementations of denoising models
-  ├── unet                # Various Unet type architectures
+  └── unet                # Various Unet-type architectures
+    ├── standard.py       # A standard Unet
+    └── auxiliary.py      # Unets that take auxiliary inputs (e.g., auxiliary latents) in various ways (e.g., via concatenation, cross-attention, etc.)
   └── modules             # Modules needed by the denoising models (attentinon, resnets, etc.)
-├── trainer               # Modules that executes diffusion model training
+├── trainer               # Module that performs diffusion model training
 └── README.md
 ```
 
@@ -72,7 +74,7 @@ python run.py train --model gaussian --dataset fashion-mnist --folder gaussian-r
 This command trains an auxiliary-variable diffusion model:
 
 ```
-python run.py train --model infomax --folder gaussian-run --epochs 50
+python run.py train --model infomax --folder infomax-run --epochs 50
 ```
 
 ## Evaluation
