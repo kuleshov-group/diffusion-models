@@ -29,6 +29,13 @@ This code was tested in a conda environment created using:
 conda create --name name python=3.7 pytorch=1.12.1 torchvision=0.13.1 cudatoolkit=11.3 -c pytorch
 ```
 
+You can also use the provided package list to recreate the full environment (note that the requirements file hasn't been cleaned up and has some unused pacakges).
+
+```
+conda create --name <env> --file conda-requirements.txt
+conda activate <env>
+```
+
 To use this package, simply clone the git repo:
 
 ```
