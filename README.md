@@ -16,7 +16,7 @@ This repo provides a clean implementation of various types of diffusion models. 
   └── unet                # Various Unet-type architectures
     ├── standard.py       # A standard Unet
     └── auxiliary.py      # Unets that take auxiliary inputs (e.g., auxiliary latents) in various ways (e.g., via concatenation, cross-attention, etc.)
-  └── modules             # Modules needed by the denoising models (attentinon, resnets, etc.)
+  └── modules             # Modules needed by the denoising models (attention, resnets, etc.)
 ├── trainer               # Module that performs diffusion model training
 └── README.md
 ```
