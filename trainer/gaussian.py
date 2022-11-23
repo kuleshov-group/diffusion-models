@@ -1,4 +1,5 @@
 """Implements the core diffusion algorithms."""
+import os
 import torch
 import torch.nn.functional as F
 from torch import nn
@@ -17,6 +18,8 @@ class Trainer():
             raise ValueError(optimizer)
         self.optimizer = optimizer
         self.folder = folder
+        if not os.path.exists(self.folder):
+            os.makedirs(self.folder)
         self.n_samples = n_samples
 
         if from_checkpoint is not None:
