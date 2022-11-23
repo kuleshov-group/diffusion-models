@@ -78,7 +78,7 @@ class LearnedGaussianDiffusion(GaussianDiffusion):
             t, xt.shape)
         coefficient_mu_phi = get_by_idx(
             torch.sqrt(1 - self.alphas), t, xt.shape)
-        z = self.noise_model(xt, t)
+        z = self.model(xt, t)
         xt_prev_mean = (
             coefficient_mu_x * xt
             - coefficient_mu_phi * mu_phi
@@ -87,10 +87,10 @@ class LearnedGaussianDiffusion(GaussianDiffusion):
         if deterministic:
             return xt_prev_mean
         else:
-            variance = get_by_idx(
-                self.posterior_variance, t, x.shape) * sigma_phi
-            print(variance.shape, sigma_phi.shape)
-            return xt_prev_mean + variance * torch.randn(x.shape, device=device)
+            variance = sigma_phi * get_by_idx(
+                self.posterior_variance, t, xt.shape)
+            noise = torch.randn(xt.shape, device=self.device)
+            return xt_prev_mean + variance * noise
 
     def loss_at_step_t(self, x0, t, loss_type="l1", noise=None):
         if noise is not None: raise NotImplementedError()
