@@ -1,6 +1,7 @@
 import argparse
 import torch
 from models.unet.standard import UNet
+from models.modules import feedforward
 from models.unet.auxiliary import AuxiliaryUNet, TimeEmbeddingAuxiliaryUNet
 from data import get_data_loader
 from diffusion.gaussian import GaussianDiffusion
@@ -172,23 +173,21 @@ def create_infomax(config, device):
 
 def create_learned(config, device):
     img_shape = [config.img_channels, config.img_dim, config.img_dim]
-    z_shape = img_shape.copy()
-
-    z_encoder = ConvGaussianEncoder(
-        img_shape=img_shape,
-        a_shape=z_shape,
-    ).to(device)
 
     model = UNet(
         channels=config.unet_channels,
         chan_mults=config.unet_mults,
         img_shape=img_shape,
-    )
-    model.to(device)
+    ).to(device)
+
+    forward_matrix = feedforward.Net(
+        input_size=model.time_channels,
+        identity=False,
+    ).to(device)
 
     return LearnedGaussianDiffusion(
         noise_model=model,
-        z_encoder_model=z_encoder,
+        forward_matrix=forward_matrix,
         img_shape=img_shape,
         timesteps=config.timesteps,
         device=device,
