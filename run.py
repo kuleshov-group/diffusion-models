@@ -1,5 +1,8 @@
 import argparse
+import os
+
 import torch
+
 from models.unet.standard import UNet
 from models.modules import feedforward
 from models.unet.auxiliary import AuxiliaryUNet, TimeEmbeddingAuxiliaryUNet
@@ -71,6 +74,8 @@ def make_parser():
 # ----------------------------------------------------------------------------
 
 def train(args):
+    if not os.path.exists(args.folder):
+        os.makedirs(args.folder)
     device = "cuda" if torch.cuda.is_available() else "cpu"
     config = get_config(args)
     model = get_model(config, device)

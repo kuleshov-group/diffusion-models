@@ -22,7 +22,7 @@ class LearnedGaussianDiffusion(GaussianDiffusion):
     def q_sample(self, x0, t, noise=None):
         """Samples from the forward diffusion process q.
 
-        Takes a sample from q(xt|x0).
+        Takes a sample from q(xt|x0). t \in {1, \dots, timesteps}
         """
         # encode x0 into auxiliary encoder variable a
         if noise is None:  noise, _, _ = torch.randn_like(x0)
@@ -36,9 +36,53 @@ class LearnedGaussianDiffusion(GaussianDiffusion):
         x_t = transormation_matrices * (x0 + torch.sqrt(t) * noise)
         return x_t.view(* original_batch_shape)
 
+    @torch.no_grad()
+    def p_sample(self, xt, t_index, aux=None, deterministic=False):
+        """Samples from the reverse diffusion process p at time step t.
+
+        Generate image x_{t_index  - 1}.
+        """
+        batch_size = xt.shape[0]
+        original_batch_shape = xt.shape
+
+        t =  torch.full((batch_size,), t_index, device=self.device, dtype=torch.long)
+        
+        coefficient_mu_z = 1 / torch.sqrt(t).view(batch_size, -1)
+        m_t = self.forward_matrix(self.model.time_mlp(t)).view(batch_size, -1)
+        m_t_minus_1 = self.forward_matrix(
+            self.model.time_mlp(t - 1)).view(batch_size, -1)
+        if t_index == 1:
+            m_t_minus_1 = 1 + 0 * m_t_minus_1  # identity
+        z = self.model(xt, t).view(batch_size, -1)
+        xt = xt.view(batch_size, -1)
+        model_mean = m_t_minus_1 * ((1 / m_t) * xt - coefficient_mu_z * z)
+        x_t_minus_1 = model_mean
+
+        if not deterministic:
+            x_t_minus_1 += torch.randn_like(
+                model_mean) * m_t_minus_1 * torch.sqrt((t - 1) / t).view(batch_size, -1)
+        
+        return x_t_minus_1.view(* original_batch_shape)
+
+    @torch.no_grad()
+    def sample(self, batch_size, x=None, deterministic=False):
+        """Samples from the diffusion process, producing images from noise
+
+        Repeatedly takes samples from p(x_{t-1}|x_t) for each t
+        """
+        shape = (batch_size, self.img_channels, self.img_dim, self.img_dim)
+        if x is None: 
+            x = torch.randn(shape, device=self.device)
+        xs = []
+
+        for t in reversed(range(1, 1 + self.timesteps)):
+            x = self.p_sample(x, t, deterministic=(t==0 or deterministic))
+            xs.append(x.cpu().numpy())
+        return xs
+
     def loss_at_step_t(self, x0, t, loss_type="l1", noise=None):
         if noise is not None: raise NotImplementedError()
-
+        t = t + 1  # t \in {1, \dots, timesteps}
         # encode x0 into auxiliary encoder variable a
         if noise is None:
             noise = torch.randn_like(x0)

@@ -1,9 +1,25 @@
 """Implements the core diffusion algorithms."""
+import numpy as np
 import torch
 import torch.nn.functional as F
 from torch import nn
 from torch.optim import Adam
+import torchvision.transforms as transforms
 from torchvision.utils import save_image
+from torchmetrics.image.inception import InceptionScore
+import PIL.Image as Image
+
+
+def process_samples_for_fid(images):
+    arr = []
+    for image in images:
+        image = 255 * (image - image.min()) / (image.max() - image.min())
+        image = np.transpose(np.array([image[0]] * 3), (1, 2, 0)).astype(np.uint8)
+        pil_img = transforms.ToPILImage()(image)
+        resized_img = pil_img.resize((299,299), Image.BILINEAR)
+        arr.append(transforms.ToTensor()(resized_img))
+    return torch.stack(arr).type(torch.uint8)
+
 
 class Trainer():
     def __init__(
@@ -18,6 +34,7 @@ class Trainer():
         self.optimizer = optimizer
         self.folder = folder
         self.n_samples = n_samples
+        self.inception_metric = InceptionScore()
 
         if from_checkpoint is not None:
             self.load_model(from_checkpoint)
@@ -44,7 +61,11 @@ class Trainer():
                 self.optimizer.step()
 
                 # save generated images
-                if step % 1000 == 0: self.save_images(epoch, step)      
+                if step % 1000 == 0:
+                    self.save_images(epoch, step)
+                    samples = process_samples_for_fid(self.model.sample(batch_size)[-1])
+                    self.inception_metric.update(samples)
+                    print('FID score:', self.inception_metric.compute())
             self.save_images(epoch, step)
             self.save_model(epoch)
 
@@ -52,6 +73,8 @@ class Trainer():
     def save_images(self, epoch, step):
         samples = torch.Tensor(self.model.sample(self.n_samples)[-1])
         samples = (samples + 1) * 0.5
+        print(samples.min(), samples.max())
+        # samples = (samples - samples.min()) / (samples.max() - samples.min())
         path = f'{self.folder}/sample-{epoch}-{step}.png'
         save_image(samples, path, nrow=6)
 
