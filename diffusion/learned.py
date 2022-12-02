@@ -80,7 +80,7 @@ class LearnedGaussianDiffusion(GaussianDiffusion):
             xs.append(x.cpu().numpy())
         return xs
 
-    def loss_at_step_t(self, x0, t, loss_type="l1", noise=None):
+    def loss_at_step_t(self, x0, t, loss_type='l1', noise=None):
         if noise is not None: raise NotImplementedError()
         t = t + 1  # t \in {1, \dots, timesteps}
         # encode x0 into auxiliary encoder variable a

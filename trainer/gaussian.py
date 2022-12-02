@@ -1,4 +1,5 @@
 """Implements the core diffusion algorithms."""
+import collections
 import numpy as np
 import torch
 import torch.nn.functional as F
@@ -37,12 +38,13 @@ class Trainer():
         self.folder = folder
         self.n_samples = n_samples
         self.inception_metric = InceptionScore()
-
+        self.metrics = collections.defaultdict(list)
         if from_checkpoint is not None:
             self.load_model(from_checkpoint)
 
     def fit(self, data_loader, epochs):
         for epoch in range(epochs):
+            metrics_per_epoch = collections.defaultdict(list)
             for step, batch in enumerate(data_loader):
                 self.optimizer.zero_grad()
 
@@ -54,28 +56,43 @@ class Trainer():
                     0, self.model.timesteps, (batch_size,), device=self.model.device
                 ).long()
 
-                loss, metrics = self.model.loss_at_step_t(batch, t, loss_type='l1')
+                loss, metrics = self.model.loss_at_step_t(
+                    batch, t, loss_type='l1')
 
                 if step % 100 == 0:
                     print_line = f'{epoch}:{step}: Loss: {loss.item():.4f}'
                     for key, value in metrics.items():
                         print_line += f' {key}:{value:.4f}'
+                        metrics_per_epoch[key].append(value)
                     print(print_line)
-
                 loss.backward()
                 self.optimizer.step()
 
-                # save generated images
-                if step % 1000 == 0:
-                    self.save_images(epoch, step)
-                    self.inception_metric.update(
-                        process_samples_for_fid(
-                            self.model.sample(batch_size)[-1]))
-                    print('FID score: {} +- {:4f}'.format(
-                        * self.inception_metric.compute()))
+            # save generated images
             self.save_images(epoch, step)
+            self.compute_fid_scores()
+            self.record_metrics(metrics_per_epoch)
             self.save_model(epoch)
-    
+        self.write_metrics()
+
+    def write_metrics(self):
+        for key, values in metrics.items():
+            with open(f'{key}.txt', 'w') as f:
+                for value in values:
+                    f.write(value)
+
+    def record_metrics(self, metrics):
+        for key, value in metrics.items():
+            self.metrics[key].append(np.mean(value))
+
+    def compute_fid_scores(self):
+        self.inception_metric.update(
+            process_samples_for_fid(
+                self.model.sample(batch_size)[-1]))
+        fid_mean, fid_std = self.inception_metric.compute()
+        self.metrics['fid'].append(fid_mean)
+        print('FID score: {} +- {:4f}'.format(fid_mean, fid_std))
+
     def save_images(self, epoch, step):
         samples = torch.Tensor(self.model.sample(self.n_samples)[-1])
         samples = (samples + 1) * 0.5
