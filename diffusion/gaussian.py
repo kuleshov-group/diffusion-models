@@ -106,7 +106,7 @@ class GaussianDiffusion(nn.Module):
             loss = F.l1_loss(noise, predicted_noise)
         elif loss_type == 'l2':
             loss = F.mse_loss(noise, predicted_noise)
-        elif loss_type == "huber":
+        elif loss_type == 'huber':
             loss = F.smooth_l1_loss(noise, predicted_noise)
         else:
             raise NotImplementedError()
@@ -120,7 +120,7 @@ class GaussianDiffusion(nn.Module):
         predicted_noise = self.model(x_noisy, t)
         loss = self.p_loss_at_step_t(noise, predicted_noise, loss_type)
 
-        return loss
+        return loss, {}
 
     def save(self, path):
         torch.save(self.state_dict(), path)

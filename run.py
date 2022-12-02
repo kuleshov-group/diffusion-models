@@ -29,6 +29,8 @@ def make_parser():
     train_parser.add_argument('--model', default='gaussian',
         choices=['gaussian', 'infomax', 'learned'], 
         help='type of ddpm model to run')
+    train_parser.add_argument('--timesteps', type=int, default=200,
+        help='total number of timesteps in the diffusion model')
     train_parser.add_argument('--dataset', default='fashion-mnist',
         choices=['fashion-mnist', 'mnist'], help='training dataset')
     train_parser.add_argument('--checkpoint', default=None,
@@ -78,15 +80,16 @@ def train(args):
         os.makedirs(args.folder)
     device = "cuda" if torch.cuda.is_available() else "cpu"
     config = get_config(args)
-    model = get_model(config, device)
-
-    if args.checkpoint:
-        model.load(args.checkpoint)
-
     config.epochs = args.epochs or config.epochs
     config.batch_size = args.batch_size or config.batch_size
     config.learning_rate = args.learning_rate or config.learning_rate
     config.optimizer = args.optimizer or config.optimizer
+    config.timesteps = args.timesteps or config.timesteps
+    
+    model = get_model(config, device)
+
+    if args.checkpoint:
+        model.load(args.checkpoint)
 
     trainer = Trainer(
         model,
@@ -188,6 +191,7 @@ def create_learned(config, device):
     forward_matrix = feedforward.Net(
         input_size=model.time_channels,
         identity=False,
+        positive_outputs=True,
     ).to(device)
 
     return LearnedGaussianDiffusion(

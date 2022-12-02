@@ -76,7 +76,7 @@ class LearnedGaussianDiffusion(GaussianDiffusion):
         xs = []
 
         for t in reversed(range(1, 1 + self.timesteps)):
-            x = self.p_sample(x, t, deterministic=(t==0 or deterministic))
+            x = self.p_sample(x, t, deterministic=deterministic)
             xs.append(x.cpu().numpy())
         return xs
 
@@ -100,4 +100,7 @@ class LearnedGaussianDiffusion(GaussianDiffusion):
         log_determinant = torch.log(self.timesteps * m_T ** 2).sum(dim=1).mean()
         kl_divergence = 0.5 * (trace + mu_squared - log_determinant - 784)
 
-        return noise_loss + kl_divergence / self.timesteps
+        return noise_loss + kl_divergence / self.timesteps, {
+            'noise_loss': noise_loss.item(),
+            'kl_divergence': kl_divergence.item(),
+        }

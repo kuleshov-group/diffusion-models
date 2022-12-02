@@ -4,28 +4,30 @@ import torch
 import torch.nn.functional as F
 from torch import nn
 from torch.optim import Adam
-import torchvision.transforms as transforms
+import torchvision
 from torchvision.utils import save_image
 from torchmetrics.image.inception import InceptionScore
 import PIL.Image as Image
 
 
 def process_samples_for_fid(images):
-    arr = []
+    processed_images = []
     for image in images:
-        image = 255 * (image - image.min()) / (image.max() - image.min())
-        image = np.transpose(np.array([image[0]] * 3), (1, 2, 0)).astype(np.uint8)
-        pil_img = transforms.ToPILImage()(image)
+        image = 255 * (image + 1) * 0.5
+        if image.shape[0] == 1:
+          image = np.array([image[0]] * 3)
+        image = np.transpose(image, (1, 2, 0)).astype(np.uint8)
+        pil_img = torchvision.transforms.ToPILImage()(image)
         resized_img = pil_img.resize((299,299), Image.BILINEAR)
-        arr.append(transforms.ToTensor()(resized_img))
-    return torch.stack(arr).type(torch.uint8)
+        processed_images.append(np.transpose(np.array(resized_img),
+                                             (2, 0, 1)))
+    return torch.tensor(processed_images, dtype=torch.uint8)
 
 
 class Trainer():
     def __init__(
         self, diffusion_model, lr=1e-3, optimizer='adam', 
-        folder='.', n_samples=36, from_checkpoint=None
-    ):
+        folder='.', n_samples=36, from_checkpoint=None):
         self.model = diffusion_model
         if optimizer=='adam':
             optimizer = Adam(self.model.parameters(), lr=lr)
@@ -52,10 +54,13 @@ class Trainer():
                     0, self.model.timesteps, (batch_size,), device=self.model.device
                 ).long()
 
-                loss = self.model.loss_at_step_t(batch, t, loss_type="huber")
+                loss, metrics = self.model.loss_at_step_t(batch, t, loss_type='l1')
 
                 if step % 100 == 0:
-                    print(f"{epoch}:{step}: Loss: {loss.item()}")
+                    print_line = f'{epoch}:{step}: Loss: {loss.item():.4f}'
+                    for key, value in metrics.items():
+                        print_line += f' {key}:{value:.4f}'
+                    print(print_line)
 
                 loss.backward()
                 self.optimizer.step()
@@ -63,12 +68,13 @@ class Trainer():
                 # save generated images
                 if step % 1000 == 0:
                     self.save_images(epoch, step)
-                    samples = process_samples_for_fid(self.model.sample(batch_size)[-1])
-                    self.inception_metric.update(samples)
-                    print('FID score:', self.inception_metric.compute())
+                    self.inception_metric.update(
+                        process_samples_for_fid(
+                            self.model.sample(batch_size)[-1]))
+                    print('FID score: {} +- {:4f}'.format(
+                        * self.inception_metric.compute()))
             self.save_images(epoch, step)
             self.save_model(epoch)
-
     
     def save_images(self, epoch, step):
         samples = torch.Tensor(self.model.sample(self.n_samples)[-1])
@@ -81,8 +87,8 @@ class Trainer():
     def save_model(self, epoch):
         path = f'{self.folder}/model-{epoch}.pth'
         self.model.save(path)
-        print(f"Saved PyTorch model state to {path}")
+        print(f'Saved PyTorch model state to {path}')
 
     def load_model(self, path):
         self.model.load(path)
-        print(f"Loaded PyTorch model state from {path}")
+        print(f'Loaded PyTorch model state from {path}')

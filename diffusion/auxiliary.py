@@ -69,4 +69,4 @@ class InfoMaxDiffusion(GaussianDiffusion):
         # TODO: how should a_loss be weighted?
         loss = p_loss + 1e-3*a_loss
 
-        return loss
+        return loss, {}
