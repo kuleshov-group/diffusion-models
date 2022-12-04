@@ -41,6 +41,7 @@ To use this package, simply clone the git repo:
 ```
 git https://github.com/kuleshov-group/diffusion-models.git;
 cd diffusion-models
+python run.py --help # make sure the code is in your PYTHONPATH
 ```
 
 ## Training the models
