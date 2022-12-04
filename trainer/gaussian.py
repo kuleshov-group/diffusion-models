@@ -63,21 +63,20 @@ class Trainer():
                     print_line = f'{epoch}:{step}: Loss: {loss.item():.4f}'
                     for key, value in metrics.items():
                         print_line += f' {key}:{value:.4f}'
-                        metrics_per_epoch[key].append(value)
+                        metrics_per_epoch[key].append(f'{epoch} {value}\n')
                     print(print_line)
                 loss.backward()
                 self.optimizer.step()
-
             # save generated images
             self.save_images(epoch, step)
-            self.compute_fid_scores()
+            self.compute_fid_scores(epoch)
             self.record_metrics(metrics_per_epoch)
             self.save_model(epoch)
         self.write_metrics()
 
     def write_metrics(self):
-        for key, values in metrics.items():
-            with open(f'{key}.txt', 'w') as f:
+        for key, values in self.metrics.items():
+            with open(f'{self.folder}/{key}.txt', 'w') as f:
                 for value in values:
                     f.write(value)
 
@@ -85,12 +84,11 @@ class Trainer():
         for key, value in metrics.items():
             self.metrics[key].append(np.mean(value))
 
-    def compute_fid_scores(self):
+    def compute_fid_scores(self, epoch):
         self.inception_metric.update(
-            process_samples_for_fid(
-                self.model.sample(batch_size)[-1]))
+            process_samples_for_fid(self.model.sample(128)[-1]))
         fid_mean, fid_std = self.inception_metric.compute()
-        self.metrics['fid'].append(fid_mean)
+        self.metrics['fid'].append(f'{epoch} {fid_mean.cpu().numpy()}')
         print('FID score: {} +- {:4f}'.format(fid_mean, fid_std))
 
     def save_images(self, epoch, step):

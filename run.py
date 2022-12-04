@@ -96,7 +96,7 @@ def train(args):
         lr=config.learning_rate,
         optimizer=config.optimizer,
         folder=args.folder,
-        from_checkpoint=args.checkpoint
+        from_checkpoint=args.checkpoint,
     )
     data_loader = get_data_loader(config.name, config.batch_size)
     trainer.fit(data_loader, config.epochs)
@@ -107,8 +107,7 @@ def eval(args):
     model = get_model(config, device)
     model.load(args.checkpoint, eval=True)
     data_loader = get_data_loader(
-        config.name, 16, train=False, labels=True
-    )
+        config.name, 16, train=False, labels=True)
 
     if args.sample:
         path = f'{args.folder}/{args.name}-samples.png'
