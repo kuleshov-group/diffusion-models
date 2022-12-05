@@ -90,7 +90,6 @@ def train(args):
 
     if args.checkpoint:
         model.load(args.checkpoint)
-
     trainer = Trainer(
         model,
         lr=config.learning_rate,
