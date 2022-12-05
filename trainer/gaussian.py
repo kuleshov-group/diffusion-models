@@ -65,7 +65,8 @@ class Trainer():
                 # t = torch.randint(
                 #     0, self.model.timesteps, (batch_size,), device=self.model.device
                 # ).long()
-                t = torch.multinomial(self.time_weights, batch_size).long()
+                t = torch.multinomial(
+                    self.time_weights, batch_size, replacement=True).long()
 
                 loss, metrics = self.model.loss_at_step_t(
                     x0=batch,
