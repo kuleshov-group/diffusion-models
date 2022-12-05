@@ -25,6 +25,7 @@ def process_images(images, return_type='float'):
         resized_img = pil_img.resize((299,299), Image.BILINEAR)
         processed_images.append(np.transpose(np.array(resized_img),
                                              (2, 0, 1)))
+    processed_images = np.array(processed_images)
     if return_type == 'uint':
         return torch.tensor(processed_images, dtype=torch.uint8)
     elif return_type == 'float':
