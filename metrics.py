@@ -2,7 +2,6 @@ import os
 
 import numpy as np
 import torch
-from PIL import Image
 from scipy import linalg
 from torch.nn.functional import adaptive_avg_pool2d
 import torchvision
@@ -56,7 +55,13 @@ class FID():
 
 
     def calculate_frechet_distance(self, images_1, images_2, eps=1e-6):
-        """Calculates the FID of two paths"""
+        """Computes the FID scores between 2 images.
+        
+        Args:
+            images: float torch.Tensor with shape (batch_size, 3, 299, 299) and values between [0, 1].
+        
+        Returns FID score of type float.
+        """
         mu1, sigma1 = self._calculate_activation_statistics(images_1)
         mu2, sigma2 = self._calculate_activation_statistics(images_2)
 
@@ -100,6 +105,13 @@ class InceptionMetric():
         self.inception_metric = InceptionScore()
 
     def compute_inception_scores(self, images):
+        """Computes the Inception scores.
+        
+        Args:
+            images: uint8 torch.Tensor with shape (batch_size, 3, 299, 299).
+        
+        Returns Inception Metric of type float.
+        """
         self.inception_metric.update(images)
         is_score_mean, is_score_std = self.inception_metric.compute()
         return is_score_mean.cpu().numpy(), is_score_std.cpu().numpy()
