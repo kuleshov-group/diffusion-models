@@ -45,6 +45,8 @@ class Trainer():
         self.n_samples = n_samples
         self.inception_score = metrics.InceptionMetric()
         self.fid_score = metrics.FID()
+        self.time_weights = 1 / torch.arange(
+            1, 1 + self.model.timesteps, device=self.model.device)
 
         self.metrics = collections.defaultdict(list)
         if from_checkpoint is not None:
@@ -60,12 +62,16 @@ class Trainer():
                 batch = batch['pixel_values'].to(self.model.device)
 
                 # Algorithm 1 line 3: sample t uniformally for every example in the batch
-                t = torch.randint(
-                    0, self.model.timesteps, (batch_size,), device=self.model.device
-                ).long()
+                # t = torch.randint(
+                #     0, self.model.timesteps, (batch_size,), device=self.model.device
+                # ).long()
+                t = torch.multinomial(self.time_weights, batch_size).long()
 
                 loss, metrics = self.model.loss_at_step_t(
-                    batch, t, loss_type='l1')
+                    x0=batch,
+                    t=t,
+                    loss_weights=self.time_weights.sum(),
+                    loss_type='l1')
 
                 if step % 100 == 0:
                     print_line = f'{epoch}:{step}: Loss: {loss.item():.4f}'
