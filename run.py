@@ -1,6 +1,7 @@
 import argparse
 import os
 
+import numpy as np
 import torch
 
 from models.unet.standard import UNet
@@ -12,9 +13,10 @@ from diffusion.auxiliary import InfoMaxDiffusion
 from diffusion.learned import LearnedGaussianDiffusion
 from models.modules.encoders import ConvGaussianEncoder
 from data.fashion_mnist import FashionMNISTConfig
-from trainer.gaussian import Trainer
+from trainer.gaussian import Trainer, process_images
 from misc.eval.sample import sample, viz_latents
 
+import metrics
 # ----------------------------------------------------------------------------
 
 def make_parser():
@@ -106,7 +108,7 @@ def eval(args):
     model = get_model(config, device)
     model.load(args.checkpoint, eval=True)
     data_loader = get_data_loader(
-        config.name, 16, train=False, labels=True)
+        config.name, 128, train=False, labels=True)
 
     if args.sample:
         path = f'{args.folder}/{args.name}-samples.png'
@@ -115,6 +117,23 @@ def eval(args):
     if args.latents:
         path = f'{args.folder}/{args.name}-latents.png'
         viz_latents(model, data_loader, args.latents, path)
+
+    scores = {'fid_score': [], 'is_score': []}
+    fid_score = metrics.FID()
+    inception_score = metrics.InceptionMetric()
+    for batch in data_loader:
+        real_images = process_images(
+            batch['pixel_values'].to(model.device).detach().cpu().numpy())
+        samples = process_images(
+            model.sample(real_images.shape[0])[-1])
+        fid_mean = fid_score.calculate_frechet_distance(
+            real_images, samples)
+        scores['fid_score'].append(fid_mean)
+        is_mean, _ = inception_score.compute_inception_scores(
+            (255 * samples).astype(torch.uint8))
+        scores['is_score'].append(is_mean)
+    print('FID score: {:.2f}'.format(np.mean(scores['fid_score'])))
+    print('IS score: {:.2f}'.format(np.mean(scores['is_score'])))
 
 # ----------------------------------------------------------------------------
 
