@@ -80,7 +80,8 @@ class LearnedGaussianDiffusion(GaussianDiffusion):
             xs.append(x.cpu().numpy())
         return xs
 
-    def loss_at_step_t(self, x0, t, loss_type='l1', noise=None):
+    def loss_at_step_t(self, x0, t, loss_weights, loss_type='l1',
+                       noise=None):
         if noise is not None: raise NotImplementedError()
         t = t + 1  # t \in {1, \dots, timesteps}
         # encode x0 into auxiliary encoder variable a
@@ -89,7 +90,9 @@ class LearnedGaussianDiffusion(GaussianDiffusion):
         batch_size = x0.shape[0]
         x_noisy = self.q_sample(x0=x0, t=t, noise=noise)
         predicted_noise = self.model(x_noisy, t)
+        
         noise_loss = self.p_loss_at_step_t(noise, predicted_noise, loss_type)
+        
         m_T = self.forward_matrix(self.model.time_mlp(
             torch.tensor([self.timesteps] * batch_size,
                          device=self.device))).view(batch_size, -1)
@@ -100,7 +103,7 @@ class LearnedGaussianDiffusion(GaussianDiffusion):
         log_determinant = torch.log(self.timesteps * m_T ** 2).sum(dim=1).mean()
         kl_divergence = 0.5 * (trace + mu_squared - log_determinant - 784)
 
-        return noise_loss + kl_divergence / self.timesteps, {
+        return loss_weights * noise_loss + kl_divergence / self.timesteps, {
             'noise_loss': noise_loss.item(),
             'kl_divergence': kl_divergence.item(),
         }

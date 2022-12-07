@@ -35,7 +35,8 @@ def process_images(images, return_type='float'):
 class Trainer():
     def __init__(
         self, diffusion_model, lr=1e-3, optimizer='adam', 
-        folder='.', n_samples=36, from_checkpoint=None):
+        folder='.', n_samples=36, from_checkpoint=None,
+        weighted_time_sample=False):
         self.model = diffusion_model
         if optimizer=='adam':
             optimizer = Adam(self.model.parameters(), lr=lr)
@@ -46,7 +47,15 @@ class Trainer():
         self.n_samples = n_samples
         self.inception_score = metrics.InceptionMetric()
         self.fid_score = metrics.FID()
-
+        self.weighted_time_sample = weighted_time_sample
+        if self.weighted_time_sample:
+            print('Using weighted time samples.')
+            self.time_weights = 1 / torch.arange(
+                1, 1 + self.model.timesteps, device=self.model.device)
+            self.loss_weights=self.time_weights.sum()
+        else:
+            self.loss_weights = 1.0
+            print('Using uniform time sampling.')
         self.metrics = collections.defaultdict(list)
         if from_checkpoint is not None:
             self.load_model(from_checkpoint)
@@ -61,12 +70,19 @@ class Trainer():
                 batch = batch['pixel_values'].to(self.model.device)
 
                 # Algorithm 1 line 3: sample t uniformally for every example in the batch
-                t = torch.randint(
-                    0, self.model.timesteps, (batch_size,), device=self.model.device
-                ).long()
-
+                if self.weighted_time_sample:
+                    t = torch.multinomial(
+                        self.time_weights, batch_size,
+                        replacement=True).long()
+                else:
+                    t = torch.randint(
+                        0, self.model.timesteps, (batch_size,),
+                        device=self.model.device).long()
                 loss, metrics = self.model.loss_at_step_t(
-                    batch, t, loss_type='l1')
+                    x0=batch,
+                    t=t,
+                    loss_weights=self.loss_weights,
+                    loss_type='l1')
 
                 if step % 100 == 0:
                     print_line = f'{epoch}:{step}: Loss: {loss.item():.4f}'

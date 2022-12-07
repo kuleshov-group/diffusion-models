@@ -33,15 +33,17 @@ def make_parser():
         help='type of ddpm model to run')
     train_parser.add_argument('--timesteps', type=int, default=200,
         help='total number of timesteps in the diffusion model')
+    train_parser.add_argument('--weighted_time_sample', type=bool, default=False,
+        help='total number of timesteps in the diffusion model')
     train_parser.add_argument('--dataset', default='fashion-mnist',
         choices=['fashion-mnist', 'mnist'], help='training dataset')
     train_parser.add_argument('--checkpoint', default=None,
         help='path to training checkpoint')
-    train_parser.add_argument('-e', '--epochs', type=int, default=None,
+    train_parser.add_argument('-e', '--epochs', type=int, default=50,
         help='number of epochs to train')
     train_parser.add_argument('--batch-size', type=int, default=None,
         help='training batch size')
-    train_parser.add_argument('--learning-rate', type=float, default=None,
+    train_parser.add_argument('--learning-rate', type=float, default=0.0001,
         help='learning rate')
     train_parser.add_argument('--optimizer', default='adam', choices=['adam'],
         help='optimization algorithm')
@@ -94,6 +96,7 @@ def train(args):
         model.load(args.checkpoint)
     trainer = Trainer(
         model,
+        weighted_time_sample=args.weighted_time_sample,
         lr=config.learning_rate,
         optimizer=config.optimizer,
         folder=args.folder,
