@@ -36,7 +36,9 @@ class LearnedGaussianDiffusion(GaussianDiffusion):
         x0 = x0.view(batch_size, -1)
         t = t.view(batch_size, -1)
         noise = noise.view(batch_size, -1)
+        
         x_t = transormation_matrices * (x0 + torch.sqrt(t) * noise)
+        
         return x_t.view(* original_batch_shape)
 
     @torch.no_grad()
