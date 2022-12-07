@@ -11,6 +11,7 @@ from data import get_data_loader
 from diffusion.gaussian import GaussianDiffusion
 from diffusion.auxiliary import InfoMaxDiffusion
 from diffusion.learned import LearnedGaussianDiffusion
+from diffusion.learned_input_and_time import LearnedGaussianDiffusionInputTime
 from models.modules.encoders import ConvGaussianEncoder
 from data.fashion_mnist import FashionMNISTConfig
 from trainer.gaussian import Trainer, process_images
@@ -29,7 +30,7 @@ def make_parser():
     train_parser.set_defaults(func=train)
 
     train_parser.add_argument('--model', default='gaussian',
-        choices=['gaussian', 'infomax', 'learned'], 
+        choices=['gaussian', 'infomax', 'learned', 'learned_input_time'], 
         help='type of ddpm model to run')
     train_parser.add_argument('--timesteps', type=int, default=200,
         help='total number of timesteps in the diffusion model')
@@ -56,7 +57,7 @@ def make_parser():
     eval_parser.set_defaults(func=eval)
 
     eval_parser.add_argument('--model', default='gaussian',
-        choices=['gaussian', 'infomax', 'learned'], 
+        choices=['gaussian', 'infomax', 'learned', 'learned_input_time'], 
         help='type of ddpm model to run')
     eval_parser.add_argument('--dataset', default='fashion-mnist',
         choices=['fashion-mnist', 'mnist'], help='training dataset')
@@ -133,7 +134,7 @@ def eval(args):
             real_images, samples)
         scores['fid_score'].append(fid_mean)
         is_mean, _ = inception_score.compute_inception_scores(
-            (255 * samples).astype(torch.uint8))
+            (255 * samples).type(torch.uint8))
         scores['is_score'].append(is_mean)
     print('FID score: {:.2f}'.format(np.mean(scores['fid_score'])))
     print('IS score: {:.2f}'.format(np.mean(scores['is_score'])))
@@ -153,6 +154,8 @@ def get_model(config, device):
         model = create_infomax(config, device)
     elif args.model == 'learned':
         model = create_learned(config, device)
+    elif args.model == 'learned_input_time':
+        model = create_learned_input_time(config, device)
     else:
         raise ValueError(args.model)
     return model
@@ -217,6 +220,34 @@ def create_learned(config, device):
     return LearnedGaussianDiffusion(
         noise_model=model,
         forward_matrix=forward_matrix,
+        img_shape=img_shape,
+        timesteps=config.timesteps,
+        device=device,
+    )
+
+def create_learned_input_time(config, device):
+    img_shape = [config.img_channels, config.img_dim, config.img_dim]
+
+    model = UNet(
+        channels=config.unet_channels,
+        chan_mults=config.unet_mults,
+        img_shape=img_shape,
+    ).to(device)
+    forward_matrix = UNet(
+        channels=config.unet_channels,
+        chan_mults=config.unet_mults,
+        img_shape=img_shape,
+    ).to(device)
+    reverse_model = UNet(
+        channels=config.unet_channels,
+        chan_mults=config.unet_mults,
+        img_shape=img_shape,
+    ).to(device)
+
+    return LearnedGaussianDiffusionInputTime(
+        noise_model=model,
+        forward_matrix=forward_matrix,
+        reverse_model=reverse_model,
         img_shape=img_shape,
         timesteps=config.timesteps,
         device=device,
