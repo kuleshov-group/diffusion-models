@@ -11,7 +11,7 @@ class LearnedGaussianDiffusion(GaussianDiffusion):
     """Implements the core learning and inference algorithms."""
     def __init__(
         self, noise_model, forward_matrix, timesteps, img_shape,
-        schedule='linear', device='cpu'
+        schedule='cosine', device='cpu'
     ):
         super().__init__(
             noise_model, timesteps, img_shape, schedule, device
@@ -27,18 +27,14 @@ class LearnedGaussianDiffusion(GaussianDiffusion):
 
         Takes a sample from q(xt|x0). t \in {1, \dots, timesteps}
         """
-        # encode x0 into auxiliary encoder variable a
-        if noise is None:  noise, _, _ = torch.randn_like(x0)
+        if noise is None:
+            noise = torch.randn_like(x0)
         original_batch_shape = x0.shape
         batch_size = original_batch_shape[0]
         transormation_matrices = self._forward_sample(
             x0, t).view(batch_size, -1)
-        x0 = x0.view(batch_size, -1)
-        t = t.view(batch_size, -1)
-        noise = noise.view(batch_size, -1)
-        
-        x_t = transormation_matrices * (x0 + torch.sqrt(t) * noise)
-        
+        x_t = transormation_matrices * self._add_noise(
+            x0, t, noise).view(batch_size, -1)
         return x_t.view(* original_batch_shape)
 
     @torch.no_grad()
@@ -51,52 +47,49 @@ class LearnedGaussianDiffusion(GaussianDiffusion):
         original_batch_shape = xt.shape
 
         t =  torch.full((batch_size,), t_index, device=self.device, dtype=torch.long)
-        
-        coefficient_mu_z = 1 / torch.sqrt(t).view(batch_size, -1)
-        m_t = self._forward_sample(None, t).view(batch_size, -1)
-        m_t_minus_1 = self._forward_sample(None, t - 1).view(batch_size, -1)
-        if t_index == 1:
-            m_t_minus_1 = 1 + 0 * m_t_minus_1  # identity
-        z = self.model(xt, t).view(batch_size, -1)
         xt = xt.view(batch_size, -1)
-        model_mean = m_t_minus_1 * ((1 / m_t) * xt - coefficient_mu_z * z)
-        x_t_minus_1 = model_mean
+        betas_t = get_by_idx(self.betas, t, xt.shape)
+        sqrt_one_minus_bar_alphas_t = get_by_idx(
+            self.sqrt_one_minus_bar_alphas, t, xt.shape
+        )
+        sqrt_recip_alphas = torch.sqrt(1.0 / self.alphas)
+        sqrt_recip_alphas_t = get_by_idx(sqrt_recip_alphas, t, xt.shape)
 
-        if not deterministic:
-            x_t_minus_1 += torch.randn_like(
-                model_mean) * m_t_minus_1 * torch.sqrt((t - 1) / t).view(batch_size, -1)
-        
-        return x_t_minus_1.view(* original_batch_shape)
+        # compute m matrices
+        m_t_bar = self._forward_sample(None, t).view(batch_size, -1)
+        m_t_minus_1_bar = self._forward_sample(None, t - 1).view(batch_size, -1)
+        if t_index == 0:
+            m_t_minus_1_bar = 1 + 0 * m_t_minus_1_bar  # identity
+        m_t_inverse = m_t_minus_1_bar / m_t_bar
+        # Equation 11 in the paper
+        # Use our model (noise predictor) to predict the mean
+        z = self.model(xt.view(* original_batch_shape), t).view(batch_size, -1)
+        xt_prev_mean = m_t_inverse * sqrt_recip_alphas_t * (
+            xt - betas_t * m_t_bar * z / sqrt_one_minus_bar_alphas_t
+        )
 
-    @torch.no_grad()
-    def sample(self, batch_size, x=None, deterministic=False):
-        """Samples from the diffusion process, producing images from noise
+        if deterministic:
+            xt_prev = xt_prev_mean # need this?
+        else:
+            post_var_t = get_by_idx(self.posterior_variance, t, xt.shape)
+            noise = torch.randn_like(xt)
+            # Algorithm 2 line 4:
+            xt_prev = xt_prev_mean + m_t_minus_1_bar * torch.sqrt(post_var_t) * noise
 
-        Repeatedly takes samples from p(x_{t-1}|x_t) for each t
-        """
-        shape = (batch_size, self.img_channels, self.img_dim, self.img_dim)
-        if x is None: 
-            x = torch.randn(shape, device=self.device)
-        xs = []
-
-        for t in reversed(range(1, 1 + self.timesteps)):
-            x = self.p_sample(x, t, deterministic=deterministic)
-            xs.append(x.cpu().numpy())
-        return xs
+        # return x_{t-1}
+        return xt_prev.view(* original_batch_shape)
 
     def _compute_prior_kl_divergence(self, x0, batch_size):
         m_T = self._forward_sample(
             x0, torch.tensor([self.timesteps] * batch_size,
                              device=self.device)).view(batch_size, -1)
-        trace = self.timesteps * (m_T ** 2).sum(dim=1).mean()
-        mu_squared = (
-            (m_T * x0.view(batch_size, -1)) ** 2).sum(dim=1).mean()
-        log_determinant = torch.log(self.timesteps * m_T ** 2).sum(dim=1).mean()
+        trace = (m_T ** 2).sum(dim=1).mean()
+        mu_squared = 0
+        log_determinant = torch.log(m_T ** 2).sum(dim=1).mean()
         return 0.5 * (trace + mu_squared - log_determinant - 784)
 
     def loss_at_step_t(self, x0, t, loss_weights, loss_type='l1', noise=None):
         if noise is not None: raise NotImplementedError()
-        t = t + 1  # t \in {1, \dots, timesteps}
         # encode x0 into auxiliary encoder variable a
         if noise is None:
             noise = torch.randn_like(x0)

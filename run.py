@@ -32,6 +32,9 @@ def make_parser():
     train_parser.add_argument('--model', default='gaussian',
         choices=['gaussian', 'infomax', 'learned', 'learned_input_time'], 
         help='type of ddpm model to run')
+    train_parser.add_argument('--schedule', default='linear',
+        choices=['linear', 'cosine'], 
+        help='constants scheduler for the diffusion model.')
     train_parser.add_argument('--timesteps', type=int, default=200,
         help='total number of timesteps in the diffusion model')
     train_parser.add_argument('--weighted_time_sample', type=bool, default=False,
@@ -171,6 +174,7 @@ def create_gaussian(config, device):
 
     return GaussianDiffusion(
         model=model,
+        schedule=args.schedule,
         img_shape=img_shape,
         timesteps=config.timesteps,
         device=device,
@@ -219,6 +223,7 @@ def create_learned(config, device):
 
     return LearnedGaussianDiffusion(
         noise_model=model,
+        schedule=args.schedule,
         forward_matrix=forward_matrix,
         img_shape=img_shape,
         timesteps=config.timesteps,

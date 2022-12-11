@@ -98,7 +98,7 @@ class Trainer():
             self.compute_inception_scores(epoch)
             self.record_metrics(epoch, metrics_per_epoch)
             self.save_model(epoch)
-        self.write_metrics()
+            self.write_metrics()
 
     def write_metrics(self):
         for key, values in self.metrics.items():
