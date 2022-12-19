@@ -50,8 +50,7 @@ class LearnedGaussianDiffusion(GaussianDiffusion):
         xt = xt.view(batch_size, -1)
         betas_t = get_by_idx(self.betas, t, xt.shape)
         sqrt_one_minus_bar_alphas_t = get_by_idx(
-            self.sqrt_one_minus_bar_alphas, t, xt.shape
-        )
+            self.sqrt_one_minus_bar_alphas, t, xt.shape)
         sqrt_recip_alphas = torch.sqrt(1.0 / self.alphas)
         sqrt_recip_alphas_t = get_by_idx(sqrt_recip_alphas, t, xt.shape)
 
@@ -80,19 +79,21 @@ class LearnedGaussianDiffusion(GaussianDiffusion):
         return xt_prev.view(* original_batch_shape)
 
     def _compute_prior_kl_divergence(self, x0, batch_size):
-        m_T = self._forward_sample(
-            x0, torch.tensor([self.timesteps] * batch_size,
-                             device=self.device)).view(batch_size, -1)
-        trace = (m_T ** 2).sum(dim=1).mean()
+        t = torch.tensor([self.timesteps - 1] * batch_size,
+                         device=self.device)
+        m_T = self._forward_sample(x0, t).view(batch_size, -1)
+        one_minus_alpha_t = get_by_idx(1 - self.alphas, t, m_T.shape)
+        trace = (one_minus_alpha_t * m_T ** 2).sum(dim=1).mean()
         mu_squared = 0
-        log_determinant = torch.log(m_T ** 2).sum(dim=1).mean()
+        log_determinant = torch.log(
+            one_minus_alpha_t * m_T ** 2).sum(dim=1).mean()
         return 0.5 * (trace + mu_squared - log_determinant - 784)
 
     def loss_at_step_t(self, x0, t, loss_weights, loss_type='l1', noise=None):
-        if noise is not None: raise NotImplementedError()
-        # encode x0 into auxiliary encoder variable a
         if noise is None:
             noise = torch.randn_like(x0)
+        else:
+            raise NotImplementedError()
         batch_size = x0.shape[0]
         x_noisy = self.q_sample(x0=x0, t=t, noise=noise)
         predicted_noise = self.model(x_noisy, t)
