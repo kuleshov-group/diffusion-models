@@ -5,6 +5,7 @@ import numpy as np
 import torch
 
 from models.unet.standard import UNet
+from models.unet.biheaded import BiheadedUNet
 from models.modules import feedforward
 from models.unet.auxiliary import AuxiliaryUNet, TimeEmbeddingAuxiliaryUNet
 from data import get_data_loader
@@ -12,6 +13,10 @@ from diffusion.gaussian import GaussianDiffusion
 from diffusion.auxiliary import InfoMaxDiffusion
 from diffusion.learned import LearnedGaussianDiffusion
 from diffusion.learned_input_and_time import LearnedGaussianDiffusionInputTime
+from diffusion.learned_input_and_time import InputTimeReparam2
+from diffusion.learned_input_and_time import InputTimeReparam3
+from diffusion.learned_input_and_time import InputTimeReparam4
+from diffusion.learned_input_and_time import InputTimeReparam5
 from models.modules.encoders import ConvGaussianEncoder
 from data.fashion_mnist import FashionMNISTConfig
 from trainer.gaussian import Trainer, process_images
@@ -37,6 +42,9 @@ def make_parser():
         help='constants scheduler for the diffusion model.')
     train_parser.add_argument('--timesteps', type=int, default=200,
         help='total number of timesteps in the diffusion model')
+    train_parser.add_argument('--reparam', type=int, default=1,
+        choices=[1, 2, 3, 4, 5], 
+        help='reparameterization type for input time diffusion model.')
     train_parser.add_argument('--weighted_time_sample', type=bool, default=False,
         help='total number of timesteps in the diffusion model')
     train_parser.add_argument('--dataset', default='fashion-mnist',
@@ -158,7 +166,7 @@ def get_model(config, device):
     elif args.model == 'learned':
         model = create_learned(config, device)
     elif args.model == 'learned_input_time':
-        model = create_learned_input_time(config, device)
+        model = create_learned_input_time(config, device, args.reparam)
     else:
         raise ValueError(args.model)
     return model
@@ -230,26 +238,41 @@ def create_learned(config, device):
         device=device,
     )
 
-def create_learned_input_time(config, device):
+def create_learned_input_time(config, device, reparam):
     img_shape = [config.img_channels, config.img_dim, config.img_dim]
-
-    model = UNet(
-        channels=config.unet_channels,
-        chan_mults=config.unet_mults,
-        img_shape=img_shape,
-    ).to(device)
+    diffusion_models = {
+        1: LearnedGaussianDiffusionInputTime,
+        2: InputTimeReparam2,
+        3: InputTimeReparam3,
+        4: InputTimeReparam4,
+        5: InputTimeReparam5,
+    }
+    if reparam == 1 or reparam == 2 or reparam == 5:
+        model = UNet(
+            channels=config.unet_channels,
+            chan_mults=config.unet_mults,
+            img_shape=img_shape,
+        ).to(device)
+        reverse_model = UNet(
+            channels=config.unet_channels,
+            chan_mults=config.unet_mults,
+            img_shape=img_shape,
+        ).to(device)
+    else:
+        model = BiheadedUNet(
+            channels=config.unet_channels,
+            chan_mults=config.unet_mults,
+            img_shape=img_shape,
+        ).to(device)
+        reverse_model = None
     forward_matrix = UNet(
         channels=config.unet_channels,
         chan_mults=config.unet_mults,
         img_shape=img_shape,
     ).to(device)
-    reverse_model = UNet(
-        channels=config.unet_channels,
-        chan_mults=config.unet_mults,
-        img_shape=img_shape,
-    ).to(device)
 
-    return LearnedGaussianDiffusionInputTime(
+    print('reparam type:', reparam)
+    return diffusion_models[reparam](
         noise_model=model,
         forward_matrix=forward_matrix,
         reverse_model=reverse_model,
