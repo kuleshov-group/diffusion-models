@@ -17,6 +17,7 @@ from diffusion.learned_input_and_time import InputTimeReparam2
 from diffusion.learned_input_and_time import InputTimeReparam3
 from diffusion.learned_input_and_time import InputTimeReparam4
 from diffusion.learned_input_and_time import InputTimeReparam5
+from diffusion.learned_input_and_time import InputTimeReparam6
 from models.modules.encoders import ConvGaussianEncoder
 from data.fashion_mnist import FashionMNISTConfig
 from trainer.gaussian import Trainer, process_images
@@ -43,7 +44,7 @@ def make_parser():
     train_parser.add_argument('--timesteps', type=int, default=200,
         help='total number of timesteps in the diffusion model')
     train_parser.add_argument('--reparam', type=int, default=1,
-        choices=[1, 2, 3, 4, 5], 
+        choices=[1, 2, 3, 4, 5, 6], 
         help='reparameterization type for input time diffusion model.')
     train_parser.add_argument('--weighted_time_sample', type=bool, default=False,
         help='total number of timesteps in the diffusion model')
@@ -246,8 +247,9 @@ def create_learned_input_time(config, device, reparam):
         3: InputTimeReparam3,
         4: InputTimeReparam4,
         5: InputTimeReparam5,
+        6: InputTimeReparam6,
     }
-    if reparam == 1 or reparam == 2 or reparam == 5:
+    if reparam == 1 or reparam == 2 or reparam == 5 or reparam == 6:
         model = UNet(
             channels=config.unet_channels,
             chan_mults=config.unet_mults,

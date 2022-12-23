@@ -108,8 +108,8 @@ class LearnedGaussianDiffusionInputTime(LearnedGaussianDiffusion):
 
         # reverse model loss
         reverse_model_loss = self.p_loss_at_step_t(
-            self._add_noise(x0, t, noise).view(batch_size, -1).detach(),
-            self.reverse_model(x_noisy, t).view(batch_size, -1),
+            self._add_noise(x0, t, noise).view(batch_size, -1),
+            self.reverse_model(x_noisy.detach(), t).view(batch_size, -1),
             loss_type)
 
         total_loss = (reverse_model_loss
@@ -180,7 +180,7 @@ class InputTimeReparam2(LearnedGaussianDiffusionInputTime):
         reverse_model_loss = self.p_loss_at_step_t(
             self._forward_sample(x0, t).view(batch_size, -1).detach(),
             self._clip_output(
-                self.reverse_model(x_noisy, t).view(batch_size, -1)),
+                self.reverse_model(x_noisy.detach(), t).view(batch_size, -1)),
             loss_type)
 
         total_loss = (reverse_model_loss
@@ -415,8 +415,8 @@ class InputTimeReparam5(LearnedGaussianDiffusionInputTime):
 
         # reverse model loss
         reverse_model_loss = self.p_loss_at_step_t(
-            self._add_noise(x0, t, noise).detach(),
-            self.reverse_model(x_noisy, t),
+            self._add_noise(x0, t, noise),
+            self.reverse_model(x_noisy.detach(), t),
             loss_type)
 
         total_loss = (reverse_model_loss
@@ -428,3 +428,46 @@ class InputTimeReparam5(LearnedGaussianDiffusionInputTime):
             'noise_loss': noise_loss.item(),
             'kl_divergence': kl_divergence.item(),
         }
+
+
+
+class InputTimeReparam6(InputTimeReparam5):
+
+    @torch.no_grad()
+    def p_sample(self, xt, t_index, deterministic=False):
+        """Samples from the reverse diffusion process p at time step t.
+
+        Generate image x_{t_index  - 1}.
+        """
+        batch_size = xt.shape[0]
+        original_batch_shape = xt.shape
+
+        t =  torch.full((batch_size,), t_index, device=self.device,
+                        dtype=torch.long)
+        
+        # xt_prev_mean
+        xt_reversed = self.reverse_model(xt, t)
+        m_t_bar = self._forward_sample(
+            xt_reversed, t).view(batch_size, -1)
+        m_t_minus_1_bar = self._forward_sample(
+            xt_reversed, t - 1).view(batch_size, -1)
+        if t_index == 0:
+            m_t_minus_1_bar = 1 + 0 * m_t_minus_1_bar  # identity
+        xt = xt.view(batch_size, -1)
+        xt_reversed = xt_reversed.view(batch_size, -1)
+        xt_prev_mean = self.p_sample_prev_mean(
+            m_inverse_xt=(
+                xt - m_t_bar * xt_reversed + m_t_minus_1_bar * xt_reversed),
+            m_t_minus_1_bar=m_t_minus_1_bar,
+            t=t,
+            z=self.model(xt.view(* original_batch_shape), t).view(batch_size, -1),
+            shape=xt.shape)
+        if deterministic:
+            xt_prev = xt_prev_mean # need this?
+        else:
+            post_var_t = get_by_idx(self.posterior_variance, t, xt.shape)
+            noise = torch.randn_like(xt)
+            # Algorithm 2 line 4:
+            xt_prev = xt_prev_mean + m_t_minus_1_bar * torch.sqrt(post_var_t) * noise
+
+        return xt_prev.view(* original_batch_shape)
