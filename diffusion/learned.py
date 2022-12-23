@@ -82,11 +82,12 @@ class LearnedGaussianDiffusion(GaussianDiffusion):
         t = torch.tensor([self.timesteps - 1] * batch_size,
                          device=self.device)
         m_T = self._forward_sample(x0, t).view(batch_size, -1)
-        one_minus_alpha_t = get_by_idx(1 - self.alphas, t, m_T.shape)
-        trace = (one_minus_alpha_t * m_T ** 2).sum(dim=1).mean()
+        one_minus_bar_alpha_t = get_by_idx(
+            self.sqrt_one_minus_bar_alphas ** 2, t, m_T.shape)
+        trace = (one_minus_bar_alpha_t * m_T ** 2).sum(dim=1).mean()
         mu_squared = 0
         log_determinant = torch.log(
-            one_minus_alpha_t * m_T ** 2).sum(dim=1).mean()
+            one_minus_bar_alpha_t * m_T ** 2).sum(dim=1).mean()
         return 0.5 * (trace + mu_squared - log_determinant - 784)
 
     def loss_at_step_t(self, x0, t, loss_weights, loss_type='l1', noise=None):

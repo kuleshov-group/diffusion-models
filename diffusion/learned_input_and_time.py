@@ -60,7 +60,7 @@ class LearnedGaussianDiffusionInputTime(LearnedGaussianDiffusion):
                         dtype=torch.long)
         
         # x0_approx
-        z = self.model(xt.view(* original_batch_shape), t)
+        z = self.model(xt, t).view(batch_size, -1)
         xt_reversed = self.reverse_model(xt, t).view(batch_size, -1)
         x0_approx = self._remove_noise(xt_reversed, z, t).view(
             * original_batch_shape)
@@ -78,7 +78,7 @@ class LearnedGaussianDiffusionInputTime(LearnedGaussianDiffusion):
                 + m_t_minus_1_bar * xt_reversed),
             m_t_minus_1_bar=m_t_minus_1_bar,
             t=t,
-            z=self.model(xt, t).view(batch_size, -1),
+            z=z,
             shape=xt.shape)
 
         if deterministic:

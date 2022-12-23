@@ -37,7 +37,7 @@ def make_parser():
     train_parser.add_argument('--model', default='gaussian',
         choices=['gaussian', 'infomax', 'learned', 'learned_input_time'], 
         help='type of ddpm model to run')
-    train_parser.add_argument('--schedule', default='linear',
+    train_parser.add_argument('--schedule', default='cosine',
         choices=['linear', 'cosine'], 
         help='constants scheduler for the diffusion model.')
     train_parser.add_argument('--timesteps', type=int, default=200,
@@ -276,6 +276,7 @@ def create_learned_input_time(config, device, reparam):
         noise_model=model,
         forward_matrix=forward_matrix,
         reverse_model=reverse_model,
+        schedule=args.schedule,
         img_shape=img_shape,
         timesteps=config.timesteps,
         device=device,
