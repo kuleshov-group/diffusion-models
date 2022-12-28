@@ -7,6 +7,7 @@ from torchvision.utils import save_image
 from .schedule import get_schedule, get_by_idx
 from .gaussian import GaussianDiffusion
 
+
 class LearnedGaussianDiffusion(GaussianDiffusion):
     """Implements the core learning and inference algorithms."""
     def __init__(
@@ -16,8 +17,37 @@ class LearnedGaussianDiffusion(GaussianDiffusion):
         super().__init__(
             noise_model, timesteps, img_shape, schedule, device
         )
+        self.gammas = [torch.sqrt(1 - self.alphas[0])]
+        for a in self.alphas[1:]:
+            self.gammas.append(self.gammas[-1] * torch.sqrt(a) + torch.sqrt(1 - a))
+        self.gammas = torch.tensor(self.gammas).to(device)
         self.z_encoder_model = z_encoder_model
         self.z_shape = img_shape
+
+    def q_sample(self, x0, t, noise=None):
+        """Samples from the forward diffusion process q.
+
+        Takes a sample from q(xt|x0).
+        """
+        if noise is None: noise = torch.randn_like(x0)
+
+        sqrt_alphas_cumprod_t = get_by_idx(
+            self.sqrt_bar_alphas, t, x0.shape
+        )
+        sqrt_one_minus_alphas_cumprod_t = get_by_idx(
+            self.sqrt_one_minus_bar_alphas, t, x0.shape
+        )
+        gammas_t = get_by_idx(
+            self.gammas, t, x0.shape)
+        
+        # TODO: can be replaced with a function call
+        mu_phi, log_sigma_phi = self.z_encoder_model(x0)
+        mu_phi = mu_phi.view(x0.shape)
+        sigma_phi = log_sigma_phi.exp().view(x0.shape)
+
+        return (sqrt_alphas_cumprod_t * x0
+                + gammas_t * mu_phi
+                + sqrt_one_minus_alphas_cumprod_t * sigma_phi * noise)
 
     def z_sample(self, x0, noise=None):
         """Samples an auxiliary latent a."""
@@ -30,14 +60,37 @@ class LearnedGaussianDiffusion(GaussianDiffusion):
 
         return z, mu_z, logsigma_z
 
-    def q_sample(self, x0, t, noise=None):
-        """Samples from the forward diffusion process q.
+    @torch.no_grad()
+    def p_sample(self, xt, t, aux=None, deterministic=False):
+        """Samples from the reverse diffusion process p at time step t.
 
-        Takes a sample from q(xt|x0).
+        Takes a sample from p(x_{t-1}|x_t).
         """
-        # encode x0 into auxiliary encoder variable a
-        if noise is None:  noise, _, _ = self.z_sample(x0)
-        return super().q_sample(x0, t, noise)
+        mu_phi, log_sigma_phi = self.z_encoder_model(xt)
+        mu_phi = mu_phi.view(xt.shape)
+        sigma_phi = log_sigma_phi.exp().view(xt.shape)
+
+        coefficient_mu_x = get_by_idx(
+            1 / torch.sqrt(self.alphas), t, xt.shape)
+        coefficient_mu_z = get_by_idx(
+            (1 - self.alphas) / torch.sqrt(
+                self.alphas * (1 - self.bar_alphas)),
+            t, xt.shape)
+        coefficient_mu_phi = get_by_idx(
+            torch.sqrt(1 - self.alphas), t, xt.shape)
+        z = self.model(xt, t)
+        xt_prev_mean = (
+            coefficient_mu_x * xt
+            - coefficient_mu_phi * mu_phi
+            - coefficient_mu_z * z)
+
+        if deterministic:
+            return xt_prev_mean
+        else:
+            variance = sigma_phi * get_by_idx(
+                self.posterior_variance, t, xt.shape)
+            noise = torch.randn(xt.shape, device=self.device)
+            return xt_prev_mean + variance * noise
 
     def loss_at_step_t(self, x0, t, loss_type="l1", noise=None):
         if noise is not None: raise NotImplementedError()
@@ -51,6 +104,6 @@ class LearnedGaussianDiffusion(GaussianDiffusion):
         z_loss = (
             0.5*(-1+mu_z**2 + torch.exp(logsigma_z)**2 - 2*logsigma_z).mean(0)
         ).sum()
-        loss = p_loss + z_loss
+        loss = p_loss + z_loss / self.timesteps
 
         return loss
