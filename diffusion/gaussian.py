@@ -24,14 +24,14 @@ class GaussianDiffusion(nn.Module):
         self.alphas = 1 - self.betas
 
         # calculations for diffusion q(x_t | x_{t-1}) and others
-        bar_alphas = torch.cumprod(self.alphas, axis=0)
-        self.sqrt_bar_alphas = torch.sqrt(bar_alphas)
-        self.sqrt_one_minus_bar_alphas = torch.sqrt(1. - bar_alphas)
+        self.bar_alphas = torch.cumprod(self.alphas, axis=0)
+        self.sqrt_bar_alphas = torch.sqrt(self.bar_alphas)
+        self.sqrt_one_minus_bar_alphas = torch.sqrt(1. - self.bar_alphas)
 
         # calculations for posterior q(x_{t-1} | x_t, x_0)
-        bar_alphas_prev = F.pad(bar_alphas[:-1], (1, 0), value=1.0)
+        bar_alphas_prev = F.pad(self.bar_alphas[:-1], (1, 0), value=1.0)
         self.posterior_variance = (
-            self.betas * (1. - bar_alphas_prev) / (1. - bar_alphas)
+            self.betas * (1. - bar_alphas_prev) / (1. - self.bar_alphas)
         )
 
     def _add_noise(self, x0, t, noise):
