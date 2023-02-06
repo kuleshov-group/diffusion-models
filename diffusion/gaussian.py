@@ -9,7 +9,7 @@ from .schedule import get_schedule, get_by_idx
 class GaussianDiffusion(nn.Module):
     """Implements the core learning and inference algorithms."""
     def __init__(
-        self, model, timesteps, img_shape, schedule='linear', device='cpu'
+        self, model, timesteps, img_shape, schedule='cosine', device='cpu'
     ):
         super().__init__()
         self.model = model
@@ -24,23 +24,17 @@ class GaussianDiffusion(nn.Module):
         self.alphas = 1 - self.betas
 
         # calculations for diffusion q(x_t | x_{t-1}) and others
-        bar_alphas = torch.cumprod(self.alphas, axis=0)
-        self.sqrt_bar_alphas = torch.sqrt(bar_alphas)
-        self.sqrt_one_minus_bar_alphas = torch.sqrt(1. - bar_alphas)
+        self.bar_alphas = torch.cumprod(self.alphas, axis=0)
+        self.sqrt_bar_alphas = torch.sqrt(self.bar_alphas)
+        self.sqrt_one_minus_bar_alphas = torch.sqrt(1. - self.bar_alphas)
 
         # calculations for posterior q(x_{t-1} | x_t, x_0)
-        bar_alphas_prev = F.pad(bar_alphas[:-1], (1, 0), value=1.0)
+        bar_alphas_prev = F.pad(self.bar_alphas[:-1], (1, 0), value=1.0)
         self.posterior_variance = (
-            self.betas * (1. - bar_alphas_prev) / (1. - bar_alphas)
+            self.betas * (1. - bar_alphas_prev) / (1. - self.bar_alphas)
         )
 
-    def q_sample(self, x0, t, noise=None):
-        """Samples from the forward diffusion process q.
-
-        Takes a sample from q(xt|x0).
-        """
-        if noise is None: noise = torch.randn_like(x0)
-
+    def _add_noise(self, x0, t, noise):
         sqrt_bar_alphas_t = get_by_idx(
             self.sqrt_bar_alphas, t, x0.shape
         )
@@ -48,17 +42,27 @@ class GaussianDiffusion(nn.Module):
             self.sqrt_one_minus_bar_alphas, t, x0.shape
         )
 
-        return (
-            sqrt_bar_alphas_t * x0 
-            + sqrt_one_minus_bar_alphas_t * noise
-        )
+        return (sqrt_bar_alphas_t * x0 
+                + sqrt_one_minus_bar_alphas_t * noise)
+
+    def q_sample(self, x0, t, noise=None):
+        """Samples from the forward diffusion process q.
+
+        Takes a sample from q(xt|x0).
+        """
+        if noise is None:
+            noise = torch.randn_like(x0)
+        return self._add_noise(x0, t, noise)
+
 
     @torch.no_grad()
-    def p_sample(self, xt, t, aux=None, deterministic=False):
+    def p_sample(self, xt, t_index, aux=None, deterministic=False):
         """Samples from the reverse diffusion process p at time step t.
 
         Takes a sample from p(x_{t-1}|x_t).
         """
+        t = torch.full(
+            (xt.shape[0],), t_index, device=self.device, dtype=torch.long)
         betas_t = get_by_idx(self.betas, t, xt.shape)
         sqrt_one_minus_bar_alphas_t = get_by_idx(
             self.sqrt_one_minus_bar_alphas, t, xt.shape
@@ -95,9 +99,8 @@ class GaussianDiffusion(nn.Module):
             x = torch.randn(shape, device=self.device)
         xs = []
 
-        for t in reversed(range(0, self.timesteps)):
-            T = torch.full((batch_size,), t, device=self.device, dtype=torch.long)
-            x = self.p_sample(x, T, deterministic=(t==0 or deterministic))
+        for t in reversed(range(self.timesteps)):
+            x = self.p_sample(x, t, deterministic=(t==0 or deterministic))
             xs.append(x.cpu().numpy())
         return xs
 
@@ -106,21 +109,21 @@ class GaussianDiffusion(nn.Module):
             loss = F.l1_loss(noise, predicted_noise)
         elif loss_type == 'l2':
             loss = F.mse_loss(noise, predicted_noise)
-        elif loss_type == "huber":
+        elif loss_type == 'huber':
             loss = F.smooth_l1_loss(noise, predicted_noise)
         else:
             raise NotImplementedError()
         return loss
 
-    def loss_at_step_t(self, x0, t, loss_type="l1", noise=None):
+    def loss_at_step_t(self, x0, t, loss_weights, loss_type='l1', noise=None):
         if noise is None:
             noise = torch.randn_like(x0)
 
         x_noisy = self.q_sample(x0=x0, t=t, noise=noise)
         predicted_noise = self.model(x_noisy, t)
-        loss = self.p_loss_at_step_t(noise, predicted_noise, loss_type)
+        loss = loss_weights * self.p_loss_at_step_t(noise, predicted_noise, loss_type)
 
-        return loss
+        return loss, {}
 
     def save(self, path):
         torch.save(self.state_dict(), path)
